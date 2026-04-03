@@ -10,19 +10,22 @@ app.use(cors()); // السماح للإضافة بالاتصال
 // ==========================================
 // 🛡️ إعدادات الأمان السريــة (Variables)
 // ==========================================
-// في الإنتاج، يجب وضع هذه القيم في إعدادات Railway (Environment Variables)
 const SERVER_SECRET = process.env.SERVER_SECRET || "Mouad_Super_Secret_Key_2026";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "mouad123";
 
 // هذا هو "المفتاح" الذي نرسله للإضافة لكي يفك تشفير روابطه ويعمل
-// بدونه، الإضافة عبارة عن كود ميت لا فائدة منه
 const BOT_DECRYPTION_KEY = process.env.BOT_DECRYPTION_KEY || "NINJA_V1_MASTER_DECRYPT_KEY_998877";
 
 // قاعدة البيانات (في الذاكرة - يمكن ربطها بـ MongoDB لاحقاً)
 let database = {};
 
+// مسار اختبار للتأكد من أن السيرفر متصل ويعمل
+app.get('/', (req, res) => {
+    res.send("✅ سيرفر الحماية يعمل بنجاح! السيرفر جاهز لاستقبال طلبات البوت.");
+});
+
 // ==========================================
-// 🤖 مسار فحص الإضافة (البوت) - صرامة تامة
+// 🤖 مسار فحص الإضافة (البوت) - صرامة وذكاء
 // ==========================================
 app.post('/api/auth/verify', (req, res) => {
     try {
@@ -35,7 +38,7 @@ app.post('/api/auth/verify', (req, res) => {
             return res.status(403).json({ status: "Error", message: "Expired request timeout." });
         }
 
-        // 2. التحقق من التوقيع (التأكد من أن الطلب قادم من إضافتك وليس من Postman)
+        // 2. التحقق من التوقيع (التأكد من أن الطلب قادم من إضافتك)
         const expectedSignature = crypto
             .createHmac('sha256', SERVER_SECRET)
             .update(`${deviceId}:${timestamp}`)
@@ -53,7 +56,7 @@ app.post('/api/auth/verify', (req, res) => {
         if (!device) {
             database[deviceId] = { 
                 status: "Pending", 
-                expectedToken: "INIT", // التوكن المبدئي
+                expectedToken: "INIT", 
                 lastSeen: new Date().toISOString() 
             };
             return res.json({ status: "Pending", message: "Waiting for admin approval." });
@@ -62,24 +65,33 @@ app.post('/api/auth/verify', (req, res) => {
         // تحديث آخر ظهور
         device.lastSeen = new Date().toISOString();
 
-        // 4. أوامر "التدمير الذاتي" (Self-Destruct Triggers)
-        if (device.status === "Banned" || device.status === "Expired") {
-            // هذه الحالة ستلتقطها الإضافة وتقوم بتفعيل كود chrome.management.uninstallSelf()
-            return res.json({ status: device.status, message: "Access permanently revoked." });
+        // 4. أوامر الحظر والتدمير (مفصولة بذكاء)
+        if (device.status === "Expired") {
+            // هذه الحالة ستلتقطها الإضافة وتقوم بالتدمير الذاتي
+            return res.json({ status: "Expired", message: "Access permanently revoked." });
+        }
+
+        if (device.status === "Banned") {
+            // قفل اللوحة فقط، دون تدمير الإضافة لكي نحتفظ بالمعرف (ID)
+            return res.json({ status: "Banned", message: "You are locked out." });
         }
 
         if (device.status === "Pending" || device.status === "Rejected") {
             return res.json({ status: device.status, message: "Access not granted yet." });
         }
 
-        // 5. 🔴 نظام اكتشاف نسخ VMware (Rolling Token) 🔴
+        // 5. 🔴 نظام اكتشاف نسخ VMware المعدل بذكاء 🔴
         if (device.status === "Active") {
             
-            // التحقق مما إذا كان التوكن المرسل يطابق التوكن المتوقع في السيرفر
-            if (currentToken !== device.expectedToken) {
+            // إذا كان الأدمن قد ضغط "تفعيل" للتو، نسمح بمرور أول توكن لعمل مزامنة (Sync)
+            if (device.forceSync) {
+                device.forceSync = false; // نلغي السماح بعد أول مرة لتفعيل الحماية مجدداً
+            } 
+            // إذا لم تكن حالة مزامنة، والتوكن غير متطابق، والتوكن ليس INIT (يعني لم يتم التثبيت من جديد)
+            else if (currentToken !== device.expectedToken && currentToken !== "INIT") {
                 console.log(`🚨 [خطر] تم اكتشاف نسخة مقلدة (VMware) للجهاز: ${deviceId}`);
                 
-                // تدمير البوت فوراً وحظره نهائياً
+                // حظر البوت فوراً
                 device.status = "Banned";
                 device.banReason = "Clone/VMware Detected";
                 
@@ -89,15 +101,15 @@ app.post('/api/auth/verify', (req, res) => {
                 });
             }
 
-            // إذا كان التوكن صحيحاً، نقوم بتوليد توكن جديد للطلب القادم
+            // إذا كان التوكن صحيحاً أو تمت المزامنة، نقوم بتوليد توكن جديد للطلب القادم
             const nextToken = crypto.randomBytes(16).toString('hex');
             device.expectedToken = nextToken; // السيرفر الآن ينتظر هذا التوكن في المرة القادمة
 
             // 6. الموافقة وإرسال "مفتاح الحياة" للإضافة
             return res.json({
                 status: "Active",
-                nextToken: nextToken, // يجب على الإضافة حفظ هذا التوكن وإرساله في الطلب القادم
-                decryptionKey: BOT_DECRYPTION_KEY // المفتاح الذي سيشغل كود البوت
+                nextToken: nextToken, // يجب على الإضافة حفظ هذا التوكن وإرساله
+                decryptionKey: BOT_DECRYPTION_KEY 
             });
         }
 
@@ -139,9 +151,11 @@ app.post('/api/admin/action', checkAdminAuth, (req, res) => {
         delete database[deviceId];
     } else {
         database[deviceId].status = action;
-        // إعادة تعيين التوكن عند التفعيل من جديد
+        
+        // 🟢 السحر هنا: إذا فعلناه، نخبر السيرفر أن يزامن التوكن الجديد ولا يحظره بسبب التوكن القديم!
         if (action === "Active") {
-            database[deviceId].expectedToken = "INIT";
+            database[deviceId].forceSync = true;
+            delete database[deviceId].banReason; // مسح سبب الحظر القديم إن وجد
         }
     }
 
