@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة تحكم النظام - Admin Mouad</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #0f172a; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; }
+        .btn { padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-green { background-color: #22c55e; color: white; }
+        .btn-green:hover { background-color: #16a34a; }
+        .btn-red { background-color: #ef4444; color: white; }
+        .btn-red:hover { background-color: #dc2626; }
+        .btn-dark { background-color: #334155; color: white; }
+        .btn-dark:hover { background-color: #1e293b; }
+    </style>
+</head>
+<body class="p-8">
+
+    <div class="max-w-5xl mx-auto">
+        <div class="flex justify-between items-center mb-8 border-b border-slate-700 pb-4">
+            <h1 class="text-3xl font-bold text-white">⚙️ تحكم السيرفر المركزي (Ninja Bot)</h1>
+            <div class="flex gap-2">
+                <input type="password" id="adminPass" placeholder="كلمة المرور..." class="px-4 py-2 rounded bg-slate-800 border border-slate-600 focus:outline-none text-left" dir="ltr">
+                <button onclick="loadDevices()" class="btn btn-dark">تحديث البيانات 🔄</button>
+            </div>
+        </div>
+
+        <div class="bg-slate-800 rounded-lg shadow-xl overflow-hidden border border-slate-700">
+            <table class="w-full text-right">
+                <thead class="bg-slate-900 text-slate-300">
+                    <tr>
+                        <th class="p-4">معرف المتصفح (Device ID)</th>
+                        <th class="p-4">الحالة (Status)</th>
+                        <th class="p-4">آخر ظهور</th>
+                        <th class="p-4 text-center">الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="devicesTable">
+                    <!-- سيتم حقن البيانات هنا -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function loadDevices() {
+            const pass = document.getElementById('adminPass').value;
+            if(!pass) return alert("أدخل كلمة المرور أولاً!");
+
+            try {
+                const response = await fetch('/api/admin/devices', {
+                    headers: { 'x-admin-pass': pass }
+                });
+                
+                if (response.status === 401) return alert("كلمة المرور خاطئة!");
+                
+                const data = await response.json();
+                const table = document.getElementById('devicesTable');
+                table.innerHTML = '';
+
+                if (Object.keys(data).length === 0) {
+                    table.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">لا يوجد أي بوت متصل حالياً</td></tr>';
+                    return;
+                }
+
+                for (const [deviceId, info] of Object.entries(data)) {
+                    let statusColor = "text-yellow-400"; // Pending
+                    if(info.status === "Active") statusColor = "text-green-400";
+                    if(info.status === "Banned") statusColor = "text-red-500 font-bold";
+                    if(info.status === "Rejected") statusColor = "text-orange-500";
+
+                    table.innerHTML += `
+                        <tr class="border-b border-slate-700 hover:bg-slate-700/50 transition">
+                            <td class="p-4 font-mono text-sm text-blue-300 ltr text-left" dir="ltr">${deviceId}</td>
+                            <td class="p-4 ${statusColor}">${info.status}</td>
+                            <td class="p-4 text-sm text-slate-400">${new Date(info.lastSeen).toLocaleString()}</td>
+                            <td class="p-4 flex justify-center gap-2">
+                                ${info.status !== 'Active' ? `<button onclick="changeStatus('${deviceId}', 'Active')" class="btn btn-green text-sm">تفعيل ✅</button>` : ''}
+                                ${info.status !== 'Banned' ? `<button onclick="changeStatus('${deviceId}', 'Banned')" class="btn btn-red text-sm">حظر 🚫</button>` : ''}
+                                <button onclick="changeStatus('${deviceId}', 'Delete')" class="btn btn-dark text-sm">حذف 🗑️</button>
+                            </td>
+                        </tr>
+                    `;
+                }
+            } catch (error) {
+                alert("حدث خطأ في الاتصال بالسيرفر");
+            }
+        }
+
+        async function changeStatus(deviceId, action) {
+            const pass = document.getElementById('adminPass').value;
+            await fetch('/api/admin/action', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'x-admin-pass': pass 
+                },
+                body: JSON.stringify({ deviceId, action })
+            });
+            loadDevices(); // تحديث الجدول فوراً
+        }
+    </script>
+</body>
+</html>
