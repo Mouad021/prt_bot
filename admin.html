@@ -3,27 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة تحكم النظام - Admin Mouad</title>
+    <title>لوحة التحكم | Ninja Server</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #0f172a; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; }
-        .btn { padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .btn-green { background-color: #22c55e; color: white; }
-        .btn-green:hover { background-color: #16a34a; }
-        .btn-red { background-color: #ef4444; color: white; }
-        .btn-red:hover { background-color: #dc2626; }
-        .btn-dark { background-color: #334155; color: white; }
-        .btn-dark:hover { background-color: #1e293b; }
+        body { background-color: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; }
+        .btn { padding: 0.4rem 0.8rem; border-radius: 0.375rem; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 0.875rem; }
+        .btn-green { background-color: #22c55e; color: white; } .btn-green:hover { background-color: #16a34a; }
+        .btn-red { background-color: #ef4444; color: white; } .btn-red:hover { background-color: #dc2626; }
+        .btn-orange { background-color: #f97316; color: white; } .btn-orange:hover { background-color: #ea580c; }
+        .btn-dark { background-color: #334155; color: white; } .btn-dark:hover { background-color: #1e293b; }
     </style>
 </head>
 <body class="p-8">
 
-    <div class="max-w-5xl mx-auto">
+    <div class="max-w-6xl mx-auto">
         <div class="flex justify-between items-center mb-8 border-b border-slate-700 pb-4">
-            <h1 class="text-3xl font-bold text-white">⚙️ تحكم السيرفر المركزي (Ninja Bot)</h1>
+            <h1 class="text-3xl font-bold text-white">⚙️ لوحة تحكم Ninja Bot (الحماية القصوى)</h1>
             <div class="flex gap-2">
-                <input type="password" id="adminPass" placeholder="كلمة المرور..." class="px-4 py-2 rounded bg-slate-800 border border-slate-600 focus:outline-none text-left" dir="ltr">
-                <button onclick="loadDevices()" class="btn btn-dark">تحديث البيانات 🔄</button>
+                <input type="password" id="adminPass" placeholder="كلمة المرور..." class="px-4 py-2 rounded bg-slate-800 border border-slate-600 focus:outline-none" dir="ltr">
+                <button onclick="loadDevices()" class="btn btn-green">تحديث 🔄</button>
             </div>
         </div>
 
@@ -31,15 +29,13 @@
             <table class="w-full text-right">
                 <thead class="bg-slate-900 text-slate-300">
                     <tr>
-                        <th class="p-4">معرف المتصفح (Device ID)</th>
-                        <th class="p-4">الحالة (Status)</th>
+                        <th class="p-4">Device ID</th>
+                        <th class="p-4">الحالة</th>
                         <th class="p-4">آخر ظهور</th>
-                        <th class="p-4 text-center">الإجراءات</th>
+                        <th class="p-4 text-center">التحكم (سيرسل الأمر للإضافة)</th>
                     </tr>
                 </thead>
-                <tbody id="devicesTable">
-                    <!-- سيتم حقن البيانات هنا -->
-                </tbody>
+                <tbody id="devicesTable"></tbody>
             </table>
         </div>
     </div>
@@ -47,13 +43,10 @@
     <script>
         async function loadDevices() {
             const pass = document.getElementById('adminPass').value;
-            if(!pass) return alert("أدخل كلمة المرور أولاً!");
+            if(!pass) return alert("يرجى إدخال كلمة المرور");
 
             try {
-                const response = await fetch('/api/admin/devices', {
-                    headers: { 'x-admin-pass': pass }
-                });
-                
+                const response = await fetch('/api/admin/devices', { headers: { 'x-admin-pass': pass } });
                 if (response.status === 401) return alert("كلمة المرور خاطئة!");
                 
                 const data = await response.json();
@@ -61,45 +54,45 @@
                 table.innerHTML = '';
 
                 if (Object.keys(data).length === 0) {
-                    table.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">لا يوجد أي بوت متصل حالياً</td></tr>';
+                    table.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">لا توجد أجهزة متصلة.</td></tr>';
                     return;
                 }
 
                 for (const [deviceId, info] of Object.entries(data)) {
                     let statusColor = "text-yellow-400"; // Pending
-                    if(info.status === "Active") statusColor = "text-green-400";
-                    if(info.status === "Banned") statusColor = "text-red-500 font-bold";
-                    if(info.status === "Rejected") statusColor = "text-orange-500";
+                    let statusIcon = "⏳";
+                    if(info.status === "Active") { statusColor = "text-green-400 font-bold"; statusIcon = "✅"; }
+                    if(info.status === "Banned") { statusColor = "text-red-500 font-bold"; statusIcon = "🚫"; }
+                    if(info.status === "Expired") { statusColor = "text-orange-500"; statusIcon = "⏰"; }
 
                     table.innerHTML += `
                         <tr class="border-b border-slate-700 hover:bg-slate-700/50 transition">
                             <td class="p-4 font-mono text-sm text-blue-300 ltr text-left" dir="ltr">${deviceId}</td>
-                            <td class="p-4 ${statusColor}">${info.status}</td>
-                            <td class="p-4 text-sm text-slate-400">${new Date(info.lastSeen).toLocaleString()}</td>
+                            <td class="p-4 ${statusColor}">${statusIcon} ${info.status} ${info.banReason ? `<br><span class="text-xs text-red-400">(${info.banReason})</span>` : ''}</td>
+                            <td class="p-4 text-sm text-slate-400" dir="ltr">${new Date(info.lastSeen).toLocaleString()}</td>
                             <td class="p-4 flex justify-center gap-2">
-                                ${info.status !== 'Active' ? `<button onclick="changeStatus('${deviceId}', 'Active')" class="btn btn-green text-sm">تفعيل ✅</button>` : ''}
-                                ${info.status !== 'Banned' ? `<button onclick="changeStatus('${deviceId}', 'Banned')" class="btn btn-red text-sm">حظر 🚫</button>` : ''}
-                                <button onclick="changeStatus('${deviceId}', 'Delete')" class="btn btn-dark text-sm">حذف 🗑️</button>
+                                ${info.status !== 'Active' ? `<button onclick="changeStatus('${deviceId}', 'Active')" class="btn btn-green">تفعيل 🟢</button>` : ''}
+                                ${info.status !== 'Expired' ? `<button onclick="changeStatus('${deviceId}', 'Expired')" class="btn btn-orange" title="سيمسح الإضافة من جهاز العميل">إنهاء الاشتراك ⏰</button>` : ''}
+                                ${info.status !== 'Banned' ? `<button onclick="changeStatus('${deviceId}', 'Banned')" class="btn btn-red" title="سيمسح الإضافة من جهاز العميل">حظر وتدمير 💥</button>` : ''}
+                                <button onclick="changeStatus('${deviceId}', 'Delete')" class="btn btn-dark">حذف من القائمة 🗑️</button>
                             </td>
                         </tr>
                     `;
                 }
-            } catch (error) {
-                alert("حدث خطأ في الاتصال بالسيرفر");
-            }
+            } catch (error) { alert("خطأ في الاتصال بالسيرفر"); }
         }
 
         async function changeStatus(deviceId, action) {
+            if(action === 'Banned' || action === 'Expired') {
+                if(!confirm('هذا الإجراء سيقوم بتفعيل "التدمير الذاتي" للإضافة في متصفح العميل ولن تعمل مجدداً. هل أنت متأكد؟')) return;
+            }
             const pass = document.getElementById('adminPass').value;
             await fetch('/api/admin/action', {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'x-admin-pass': pass 
-                },
+                headers: { 'Content-Type': 'application/json', 'x-admin-pass': pass },
                 body: JSON.stringify({ deviceId, action })
             });
-            loadDevices(); // تحديث الجدول فوراً
+            loadDevices();
         }
     </script>
 </body>
