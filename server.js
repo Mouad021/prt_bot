@@ -1,116 +1,154 @@
 const express = require('express');
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const path = require('path');
 
 const app = express();
 app.use(express.json());
-// السماح للإضافة بالاتصال بالسيرفر
-app.use(cors());
+app.use(cors()); // السماح للإضافة بالاتصال
 
-// --- إعدادات الأمان (يجب وضعها في متغيرات البيئة في Railway لاحقاً) ---
+// ==========================================
+// 🛡️ إعدادات الأمان السريــة (Variables)
+// ==========================================
+// في الإنتاج، يجب وضع هذه القيم في إعدادات Railway (Environment Variables)
 const SERVER_SECRET = process.env.SERVER_SECRET || "Mouad_Super_Secret_Key_2026";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "mouad123"; // كلمة مرور لوحة التحكم
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "mouad123";
 
-// قاعدة بيانات مؤقتة (في الذاكرة) - *ملاحظة: في الإنتاج الحقيقي يفضل استخدام MongoDB*
+// هذا هو "المفتاح" الذي نرسله للإضافة لكي يفك تشفير روابطه ويعمل
+// بدونه، الإضافة عبارة عن كود ميت لا فائدة منه
+const BOT_DECRYPTION_KEY = process.env.BOT_DECRYPTION_KEY || "NINJA_V1_MASTER_DECRYPT_KEY_998877";
+
+// قاعدة البيانات (في الذاكرة - يمكن ربطها بـ MongoDB لاحقاً)
 let database = {};
 
 // ==========================================
-// 1. مسارات الإضافة (البوت) - صرامة تامة
+// 🤖 مسار فحص الإضافة (البوت) - صرامة تامة
 // ==========================================
 app.post('/api/auth/verify', (req, res) => {
     try {
-        const { deviceId, timestamp, signature } = req.body;
+        // الإضافة ترسل: المعرف، الوقت، التوقيع، والتوكن الحالي
+        const { deviceId, timestamp, signature, currentToken } = req.body;
 
+        // 1. الحماية من إعادة استخدام الطلبات (Replay Attacks)
         const now = Date.now();
-        if (Math.abs(now - timestamp) > 60000) {
-            return res.status(403).json({ error: "Expired request" });
+        if (Math.abs(now - timestamp) > 60000) { // الطلب صالح لدقيقة واحدة
+            return res.status(403).json({ status: "Error", message: "Expired request timeout." });
         }
 
+        // 2. التحقق من التوقيع (التأكد من أن الطلب قادم من إضافتك وليس من Postman)
         const expectedSignature = crypto
             .createHmac('sha256', SERVER_SECRET)
             .update(`${deviceId}:${timestamp}`)
             .digest('hex');
 
         if (signature !== expectedSignature) {
-            return res.status(403).json({ error: "Invalid signature! Hacker detected." });
+            console.log(`[تحذير أمني] محاولة تزوير طلب من: ${deviceId}`);
+            return res.status(403).json({ status: "Error", message: "Invalid Signature." });
         }
 
+        // 3. جلب الجهاز من قاعدة البيانات
         let device = database[deviceId];
         
+        // إذا كان الجهاز جديداً تماماً (أول مرة يفتح الإضافة)
         if (!device) {
-            // تسجيل جهاز جديد كـ Pending (ينتظر موافقتك)
-            database[deviceId] = { status: "Pending", lastSeen: new Date().toISOString() };
-            return res.status(403).json({ status: "Pending", message: "Waiting for admin approval" });
+            database[deviceId] = { 
+                status: "Pending", 
+                expectedToken: "INIT", // التوكن المبدئي
+                lastSeen: new Date().toISOString() 
+            };
+            return res.json({ status: "Pending", message: "Waiting for admin approval." });
         }
 
         // تحديث آخر ظهور
         device.lastSeen = new Date().toISOString();
 
-        if (device.status === "Banned" || device.status === "Rejected") {
-            return res.status(403).json({ status: device.status, message: "Access denied." });
+        // 4. أوامر "التدمير الذاتي" (Self-Destruct Triggers)
+        if (device.status === "Banned" || device.status === "Expired") {
+            // هذه الحالة ستلتقطها الإضافة وتقوم بتفعيل كود chrome.management.uninstallSelf()
+            return res.json({ status: device.status, message: "Access permanently revoked." });
         }
 
+        if (device.status === "Pending" || device.status === "Rejected") {
+            return res.json({ status: device.status, message: "Access not granted yet." });
+        }
+
+        // 5. 🔴 نظام اكتشاف نسخ VMware (Rolling Token) 🔴
         if (device.status === "Active") {
-            const sessionToken = jwt.sign({ deviceId: deviceId }, SERVER_SECRET, { expiresIn: '1h' });
+            
+            // التحقق مما إذا كان التوكن المرسل يطابق التوكن المتوقع في السيرفر
+            if (currentToken !== device.expectedToken) {
+                console.log(`🚨 [خطر] تم اكتشاف نسخة مقلدة (VMware) للجهاز: ${deviceId}`);
+                
+                // تدمير البوت فوراً وحظره نهائياً
+                device.status = "Banned";
+                device.banReason = "Clone/VMware Detected";
+                
+                return res.json({ 
+                    status: "Banned", 
+                    message: "Security Violation: Cloning detected. You are banned." 
+                });
+            }
+
+            // إذا كان التوكن صحيحاً، نقوم بتوليد توكن جديد للطلب القادم
+            const nextToken = crypto.randomBytes(16).toString('hex');
+            device.expectedToken = nextToken; // السيرفر الآن ينتظر هذا التوكن في المرة القادمة
+
+            // 6. الموافقة وإرسال "مفتاح الحياة" للإضافة
             return res.json({
                 status: "Active",
-                token: sessionToken,
-                botKey: "KEY_REQUIRED_FOR_BOT_FUNCTIONS" // بدون هذا لا تعمل الإضافة
+                nextToken: nextToken, // يجب على الإضافة حفظ هذا التوكن وإرساله في الطلب القادم
+                decryptionKey: BOT_DECRYPTION_KEY // المفتاح الذي سيشغل كود البوت
             });
         }
 
     } catch (error) {
-        return res.status(500).json({ error: "Internal Server Error" });
+        return res.status(500).json({ status: "Error", message: "Internal Server Error" });
     }
 });
 
 // ==========================================
-// 2. مسارات لوحة التحكم (AdminMouad)
+// 👑 مسارات لوحة التحكم (Admin Panel)
 // ==========================================
 
-// عرض واجهة لوحة التحكم
+// عرض الواجهة
 app.get('/AdminMouad', (req, res) => {
     res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
-// ميدل وير للتحقق من كلمة مرور الأدمن
+// التحقق من الإدارة
 const checkAdminAuth = (req, res, next) => {
-    const pass = req.headers['x-admin-pass'];
-    if (pass === ADMIN_PASSWORD) {
+    if (req.headers['x-admin-pass'] === ADMIN_PASSWORD) {
         next();
     } else {
-        res.status(401).json({ error: "Unauthorized access" });
+        res.status(401).json({ error: "Unauthorized" });
     }
 };
 
-// جلب قائمة البوتات
+// جلب البيانات
 app.get('/api/admin/devices', checkAdminAuth, (req, res) => {
     res.json(database);
 });
 
-// تغيير حالة البوت (قبول، رفض، حظر)
+// التحكم في الأجهزة
 app.post('/api/admin/action', checkAdminAuth, (req, res) => {
     const { deviceId, action } = req.body;
     
-    if (!database[deviceId]) {
-        return res.status(404).json({ error: "Device not found" });
-    }
+    if (!database[deviceId]) return res.status(404).json({ error: "Device not found" });
 
-    // action: "Active", "Pending", "Rejected", "Banned", "Delete"
     if (action === "Delete") {
         delete database[deviceId];
     } else {
         database[deviceId].status = action;
+        // إعادة تعيين التوكن عند التفعيل من جديد
+        if (action === "Active") {
+            database[deviceId].expectedToken = "INIT";
+        }
     }
 
     res.json({ success: true, database });
 });
 
-// تشغيل السيرفر
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Admin Panel: http://localhost:${PORT}/AdminMouad`);
+    console.log(`[Ninja Server] Running strictly on port ${PORT}`);
 });
