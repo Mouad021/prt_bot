@@ -149,6 +149,7 @@ app.post('/api/admin/action', checkAdminAuth, (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+// أضفنا '0.0.0.0' لكي يعمل بشكل صحيح على Railway
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Ninja Server] Running strictly on port ${PORT}`);
 });
